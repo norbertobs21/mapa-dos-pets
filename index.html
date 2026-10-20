@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Mapa dos Pets</title>
   
-  <!-- CSS do Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
   <style>
@@ -21,7 +20,6 @@
       width: 100vw;
     }
 
-    /* Estilo do marcador com a fotinha do pet */
     .pet-marker {
       background: none;
       border: none;
@@ -37,7 +35,6 @@
       background-color: #fff;
     }
 
-    /* Modal / Janela flutuante para envio */
     #petModal {
       display: none;
       position: fixed;
@@ -107,7 +104,6 @@
 
   <div id="map"></div>
 
-  <!-- Janela para cadastrar o pet -->
   <div id="petModal">
     <div class="modal-content">
       <h3>🐾 Adicionar Pet</h3>
@@ -121,24 +117,62 @@
       </div>
       <div class="modal-buttons">
         <button class="btn btn-cancel" id="btnCancel">Cancelar</button>
-        <button class="btn btn-save" id="btnSave">Adicionar</button>
+        <button class="btn btn-save" id="btnSave">Salvar Pet</button>
       </div>
     </div>
   </div>
 
-  <!-- Script do Leaflet -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 
   <script>
-    // Inicializa o mapa centralizado no Brasil
+    // 1. CREDENCIAIS DO SUPABASE
+    const SUPABASE_URL = 'https://oskcpmwvlzpzmhfiblry.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable__pdG4DVZqkecv0iDdqeE0A_ArkMQDTh';
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // 2. INICIALIZAÇÃO DO MAPA
     const map = L.map('map').setView([-14.235, -51.925], 5);
 
-    // Camada do mapa OpenStreetMap
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
+    function desenharMarcador(nome, fotoUrl, lat, lng) {
+      const petIcon = L.divIcon({
+        className: 'pet-marker',
+        html: `<img src="${fotoUrl}" class="pet-avatar" alt="${nome}" title="${nome}">`,
+        iconSize: [44, 44],
+        iconAnchor: [22, 22],
+        popupAnchor: [0, -22]
+      });
+
+      L.marker([lat, lng], { icon: petIcon })
+        .addTo(map)
+        .bindPopup(`
+          <div style="text-align: center;">
+            <b>${nome}</b><br/>
+            <img src="${fotoUrl}" style="width: 140px; height: 140px; object-fit: cover; border-radius: 8px; margin-top: 6px;" />
+          </div>
+        `);
+    }
+
+    // 3. CARREGAR OS PETS DA BASE DE DADOS
+    async function carregarPets() {
+      const { data, error } = await db.from('pets').select('*');
+      if (error) {
+        console.error('Erro ao procurar pets:', error);
+        return;
+      }
+      data.forEach(pet => {
+        desenharMarcador(pet.name, pet.photo_url, pet.lat, pet.lng);
+      });
+    }
+
+    carregarPets();
+
+    // 4. EVENTO DE CLIQUE E ENVIO
     let clickedCoords = null;
     const modal = document.getElementById('petModal');
     const petNameInput = document.getElementById('petName');
@@ -146,7 +180,6 @@
     const btnCancel = document.getElementById('btnCancel');
     const btnSave = document.getElementById('btnSave');
 
-    // Ao clicar em qualquer local do mapa, abre a caixinha de upload
     map.on('click', function(e) {
       clickedCoords = e.latlng;
       petNameInput.value = '';
@@ -154,51 +187,58 @@
       modal.style.display = 'flex';
     });
 
-    // Fechar ao cancelar
     btnCancel.addEventListener('click', function() {
       modal.style.display = 'none';
       clickedCoords = null;
     });
 
-    // Salvar e desenhar o pet no mapa
-    btnSave.addEventListener('click', function() {
+    btnSave.addEventListener('click', async function() {
       const name = petNameInput.value.trim() || 'Meu Pet';
       const file = petPhotoInput.files[0];
 
       if (!file) {
-        alert('Por favor, selecione uma foto (JPG ou PNG)!');
+        alert('Por favor, selecione uma foto!');
         return;
       }
 
-      // Converte o arquivo do computador/celular em exibição local
-      const reader = new FileReader();
-      reader.onload = function(event) {
-        const imageSrc = event.target.result;
+      btnSave.innerText = 'A enviar...';
+      btnSave.disabled = true;
 
-        // Cria o marcador circular com a foto
-        const petIcon = L.divIcon({
-          className: 'pet-marker',
-          html: `<img src="${imageSrc}" class="pet-avatar" alt="${name}" title="${name}">`,
-          iconSize: [44, 44],
-          iconAnchor: [22, 22],
-          popupAnchor: [0, -22]
-        });
+      try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+        
+        const { error: uploadError } = await db.storage
+          .from('fotos-pets')
+          .upload(fileName, file);
 
-        // Adiciona ao mapa
-        L.marker([clickedCoords.lat, clickedCoords.lng], { icon: petIcon })
-          .addTo(map)
-          .bindPopup(`
-            <div style="text-align: center;">
-              <b>${name}</b><br/>
-              <img src="${imageSrc}" style="width: 140px; height: 140px; object-fit: cover; border-radius: 8px; margin-top: 6px;" />
-            </div>
-          `)
-          .openPopup();
+        if (uploadError) throw uploadError;
 
+        const { data: publicUrlData } = db.storage
+          .from('fotos-pets')
+          .getPublicUrl(fileName);
+
+        const photoUrl = publicUrlData.publicUrl;
+
+        const { error: insertError } = await db.from('pets').insert([
+          {
+            name: name,
+            photo_url: photoUrl,
+            lat: clickedCoords.lat,
+            lng: clickedCoords.lng
+          }
+        ]);
+
+        if (insertError) throw insertError;
+
+        desenharMarcador(name, photoUrl, clickedCoords.lat, clickedCoords.lng);
         modal.style.display = 'none';
-      };
-
-      reader.readAsDataURL(file);
+      } catch (err) {
+        alert('Erro ao guardar pet: ' + err.message);
+      } finally {
+        btnSave.innerText = 'Salvar Pet';
+        btnSave.disabled = false;
+      }
     });
   </script>
 </body>
