@@ -113,7 +113,7 @@
       </div>
       <div class="form-group">
         <label for="petPhoto">Escolha a foto (JPG, PNG):</label>
-        <input type="file" id="petPhoto" accept="image/jpeg, image/png, image/webp" />
+        <input type="file" id="petPhoto" accept="image/*" />
       </div>
       <div class="modal-buttons">
         <button class="btn btn-cancel" id="btnCancel">Cancelar</button>
@@ -123,13 +123,13 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
-    // 1. CREDENCIAIS DO SUPABASE
-    const SUPABASE_URL = 'https://oskcpmwvlzpzmhfiblry.supabase.co';
+    // 1. CREDENCIAIS DO SUPABASE (URL corrigida com o final 'v')
+    const SUPABASE_URL = 'https://oskcpmwvlzpzmhfiblryv.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9za2Nwd3ZsenB6bWhmaWJscnl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI0NjA1MDAsImV4cCI6MjEwODAzNjUwMH0.aDwC5_yeyA5s5Y1DIoeaw5h9lBT1xmJ0To0_ufuCxuE';
-    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     // 2. INICIALIZACAO DO MAPA
     const map = L.map('map').setView([-14.235, -51.925], 5);
@@ -160,14 +160,17 @@
 
     // 3. CARREGAR OS PETS DA BASE DE DADOS
     async function carregarPets() {
-      const { data, error } = await db.from('pets').select('*');
-      if (error) {
-        console.error('Erro ao procurar pets:', error);
-        return;
+      try {
+        const { data, error } = await db.from('pets').select('*');
+        if (error) throw error;
+        if (data) {
+          data.forEach(pet => {
+            desenharMarcador(pet.name, pet.photo_url, pet.lat, pet.lng);
+          });
+        }
+      } catch (err) {
+        console.error('Erro ao procurar pets:', err);
       }
-      data.forEach(pet => {
-        desenharMarcador(pet.name, pet.photo_url, pet.lat, pet.lng);
-      });
     }
 
     carregarPets();
@@ -208,9 +211,15 @@
         const fileExt = file.name.split('.').pop();
         const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
         
+        // Converte o arquivo para ArrayBuffer para envio direto sem bloqueio de rede
+        const buffer = await file.arrayBuffer();
+
         const { error: uploadError } = await db.storage
           .from('fotos-pets')
-          .upload(fileName, file);
+          .upload(fileName, buffer, {
+            contentType: file.type || 'image/jpeg',
+            upsert: true
+          });
 
         if (uploadError) throw uploadError;
 
@@ -234,7 +243,8 @@
         desenharMarcador(name, photoUrl, clickedCoords.lat, clickedCoords.lng);
         modal.style.display = 'none';
       } catch (err) {
-        alert('Erro ao guardar pet: ' + err.message);
+        console.error(err);
+        alert('Erro ao guardar pet: ' + (err.message || JSON.stringify(err)));
       } finally {
         btnSave.innerText = 'Salvar Pet';
         btnSave.disabled = false;
