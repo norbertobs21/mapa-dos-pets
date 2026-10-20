@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mapa dos Gatinhos</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    #map { height: 100vh; width: 100%; }
+    .cat-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 2px solid #ffaa00;
+      object-fit: cover;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // Inicia o mapa centralizado no Brasil
+    const map = L.map('map').setView([-14.235, -51.925], 5);
+
+    // Adiciona o mapa base
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+    }).addTo(map);
+
+    // Evento de clique para adicionar um gatinho
+    map.on('click', function(e) {
+      const nomeGato = prompt("Qual o nome do seu gatinho?");
+      const urlFoto = prompt("Insira a URL da foto do seu gatinho:");
+
+      if (nomeGato && urlFoto) {
+        // Marcador personalizado com a imagem
+        const customIcon = L.divIcon({
+          className: 'custom-cat-pin',
+          html: `<img src="${urlFoto}" class="cat-avatar" title="${nomeGato}" />`,
+          iconSize: [40, 40],
+          iconAnchor: [20, 20]
+        });
+
+        // Adiciona o marcador nas coordenadas clicadas
+        L.marker([e.latlng.lat, e.latlng.lng], { icon: customIcon })
+          .addTo(map)
+          .bindPopup(`<b>${nomeGato}</b><br><img src="${urlFoto}" width="120" style="border-radius: 8px; margin-top: 5px;" />`)
+          .openPopup();
+      }
+    });
+  </script>
+</body>
+</html>
