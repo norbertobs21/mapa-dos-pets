@@ -2,52 +2,203 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Mapa dos Gatinhos</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mapa dos Pets</title>
+  
+  <!-- CSS do Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
   <style>
-    #map { height: 100vh; width: 100%; }
-    .cat-avatar {
-      width: 40px;
-      height: 40px;
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
+    
+    #map {
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* Estilo do marcador com a fotinha do pet */
+    .pet-marker {
+      background: none;
+      border: none;
+    }
+    .pet-avatar {
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
-      border: 2px solid #ffaa00;
+      border: 3px solid #ff7b00;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.4);
       object-fit: cover;
+      display: block;
+      background-color: #fff;
+    }
+
+    /* Modal / Janela flutuante para envio */
+    #petModal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.55);
+      z-index: 9999;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-content {
+      background: #ffffff;
+      padding: 24px;
+      border-radius: 12px;
+      width: 90%;
+      max-width: 380px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    }
+    .modal-content h3 {
+      margin-bottom: 15px;
+      color: #333;
+      text-align: center;
+    }
+    .form-group {
+      margin-bottom: 14px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: bold;
+      font-size: 14px;
+      color: #444;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    .modal-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .btn {
+      padding: 9px 18px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .btn-cancel {
+      background: #e0e0e0;
+      color: #333;
+    }
+    .btn-save {
+      background: #ff7b00;
+      color: #fff;
     }
   </style>
 </head>
 <body>
+
   <div id="map"></div>
 
+  <!-- Janela para cadastrar o pet -->
+  <div id="petModal">
+    <div class="modal-content">
+      <h3>🐾 Adicionar Pet</h3>
+      <div class="form-group">
+        <label for="petName">Nome do pet:</label>
+        <input type="text" id="petName" placeholder="Ex: Mingau" />
+      </div>
+      <div class="form-group">
+        <label for="petPhoto">Escolha a foto (JPG, PNG):</label>
+        <input type="file" id="petPhoto" accept="image/jpeg, image/png, image/webp" />
+      </div>
+      <div class="modal-buttons">
+        <button class="btn btn-cancel" id="btnCancel">Cancelar</button>
+        <button class="btn btn-save" id="btnSave">Adicionar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Script do Leaflet -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <script>
-    // Inicia o mapa centralizado no Brasil
+    // Inicializa o mapa centralizado no Brasil
     const map = L.map('map').setView([-14.235, -51.925], 5);
 
-    // Adiciona o mapa base
+    // Camada do mapa OpenStreetMap
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 18,
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    // Evento de clique para adicionar um gatinho
-    map.on('click', function(e) {
-      const nomeGato = prompt("Qual o nome do seu gatinho?");
-      const urlFoto = prompt("Insira a URL da foto do seu gatinho:");
+    let clickedCoords = null;
+    const modal = document.getElementById('petModal');
+    const petNameInput = document.getElementById('petName');
+    const petPhotoInput = document.getElementById('petPhoto');
+    const btnCancel = document.getElementById('btnCancel');
+    const btnSave = document.getElementById('btnSave');
 
-      if (nomeGato && urlFoto) {
-        // Marcador personalizado com a imagem
-        const customIcon = L.divIcon({
-          className: 'custom-cat-pin',
-          html: `<img src="${urlFoto}" class="cat-avatar" title="${nomeGato}" />`,
-          iconSize: [40, 40],
-          iconAnchor: [20, 20]
+    // Ao clicar em qualquer local do mapa, abre a caixinha de upload
+    map.on('click', function(e) {
+      clickedCoords = e.latlng;
+      petNameInput.value = '';
+      petPhotoInput.value = '';
+      modal.style.display = 'flex';
+    });
+
+    // Fechar ao cancelar
+    btnCancel.addEventListener('click', function() {
+      modal.style.display = 'none';
+      clickedCoords = null;
+    });
+
+    // Salvar e desenhar o pet no mapa
+    btnSave.addEventListener('click', function() {
+      const name = petNameInput.value.trim() || 'Meu Pet';
+      const file = petPhotoInput.files[0];
+
+      if (!file) {
+        alert('Por favor, selecione uma foto (JPG ou PNG)!');
+        return;
+      }
+
+      // Converte o arquivo do computador/celular em exibição local
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const imageSrc = event.target.result;
+
+        // Cria o marcador circular com a foto
+        const petIcon = L.divIcon({
+          className: 'pet-marker',
+          html: `<img src="${imageSrc}" class="pet-avatar" alt="${name}" title="${name}">`,
+          iconSize: [44, 44],
+          iconAnchor: [22, 22],
+          popupAnchor: [0, -22]
         });
 
-        // Adiciona o marcador nas coordenadas clicadas
-        L.marker([e.latlng.lat, e.latlng.lng], { icon: customIcon })
+        // Adiciona ao mapa
+        L.marker([clickedCoords.lat, clickedCoords.lng], { icon: petIcon })
           .addTo(map)
-          .bindPopup(`<b>${nomeGato}</b><br><img src="${urlFoto}" width="120" style="border-radius: 8px; margin-top: 5px;" />`)
+          .bindPopup(`
+            <div style="text-align: center;">
+              <b>${name}</b><br/>
+              <img src="${imageSrc}" style="width: 140px; height: 140px; object-fit: cover; border-radius: 8px; margin-top: 6px;" />
+            </div>
+          `)
           .openPopup();
-      }
+
+        modal.style.display = 'none';
+      };
+
+      reader.readAsDataURL(file);
     });
   </script>
 </body>
