@@ -126,7 +126,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
-    // 1. CREDENCIAIS DO SUPABASE (URL corrigida com o final 'v')
+    // 1. CREDENCIAIS DO SUPABASE
     const SUPABASE_URL = 'https://oskcpmwvlzpzmhfiblryv.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9za2Nwd3ZsenB6bWhmaWJscnl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI0NjA1MDAsImV4cCI6MjEwODAzNjUwMH0.aDwC5_yeyA5s5Y1DIoeaw5h9lBT1xmJ0To0_ufuCxuE';
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -158,7 +158,7 @@
         `);
     }
 
-    // 3. CARREGAR OS PETS DA BASE DE DADOS
+    // 3. CARREGAR OS PETS GUARDADOS
     async function carregarPets() {
       try {
         const { data, error } = await db.from('pets').select('*');
@@ -169,13 +169,51 @@
           });
         }
       } catch (err) {
-        console.error('Erro ao procurar pets:', err);
+        console.error('Erro ao carregar pets:', err);
       }
     }
 
     carregarPets();
 
-    // 4. EVENTO DE CLIQUE E ENVIO
+    // 4. FUNCAO PARA OTIMIZAR E REDUZIR A IMAGEM
+    function comprimirImagem(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (e) => {
+          const img = new Image();
+          img.src = e.target.result;
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxDim = 300;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > maxDim) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              }
+            } else {
+              if (height > maxDim) {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.8));
+          };
+          img.onerror = reject;
+        };
+        reader.onerror = reject;
+      });
+    }
+
+    // 5. EVENTO DE CLIQUE E ENVIO
     let clickedCoords = null;
     const modal = document.getElementById('petModal');
     const petNameInput = document.getElementById('petName');
@@ -204,30 +242,11 @@
         return;
       }
 
-      btnSave.innerText = 'A enviar...';
+      btnSave.innerText = 'A guardar...';
       btnSave.disabled = true;
 
       try {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
-        
-        // Converte o arquivo para ArrayBuffer para envio direto sem bloqueio de rede
-        const buffer = await file.arrayBuffer();
-
-        const { error: uploadError } = await db.storage
-          .from('fotos-pets')
-          .upload(fileName, buffer, {
-            contentType: file.type || 'image/jpeg',
-            upsert: true
-          });
-
-        if (uploadError) throw uploadError;
-
-        const { data: publicUrlData } = db.storage
-          .from('fotos-pets')
-          .getPublicUrl(fileName);
-
-        const photoUrl = publicUrlData.publicUrl;
+        const photoUrl = await comprimirImagem(file);
 
         const { error: insertError } = await db.from('pets').insert([
           {
